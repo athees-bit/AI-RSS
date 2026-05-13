@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>AI Top Stories</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg: #0f172a;       /* slate-900 */
+      --card: #111827;     /* gray-900 */
+      --text: #e5e7eb;     /* gray-200 */
+      --muted: #9ca3af;    /* gray-400 */
+      --accent: #60a5fa;   /* blue-400 */
+      --border: #1f2937;   /* gray-800 */
+    }
+    html, body { margin:0; padding:0; background:var(--bg); color:var(--text); font-family: system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 18px; }
+    header { display:flex; align-items:center; gap:12px; margin-bottom: 14px; }
+    header h1 { font-size: 1.25rem; margin:0; }
+    header .stamp { font-size: 0.85rem; color: var(--muted); }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    @media (min-width: 640px) { .grid { grid-template-columns: 1fr 1fr; } }
+    @media (min-width: 900px) { .grid { grid-template-columns: 1fr 1fr 1fr; } }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      display:flex; flex-direction:column; gap:8px;
+      min-height: 140px;
+    }
+    .card a {
+      color: var(--accent); text-decoration: none; font-weight: 600;
+    }
+    .card a:hover { text-decoration: underline; }
+    .source { font-size: 0.8rem; color: var(--muted); }
+    .desc { font-size: 0.9rem; color: var(--text); }
+    footer { margin-top: 10px; font-size: 0.8rem; color: var(--muted); }
+    .brand { color: var(--accent); font-weight:600; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M12 2l3 6 6 .5-4.5 4 1.5 6-6-3.5L6 18.5l1.5-6-4.5-4L9 8l3-6z" stroke="#60a5fa" stroke-width="1.2" />
+      </svg>
+      <h1>AI Top Stories</h1>
+      <span class="stamp" id="stamp">Updating…</span>
+    </header>
+
+    <div class="grid" id="grid" role="list"></div>
+
+    <footer>
+      Curated sources: <span class="brand">MIT Tech Review</span>, <span class="brand">Ars Technica</span>, 
+      <span class="brand">IEEE Spectrum</span>, <span class="brand">The Verge</span>, and <span class="brand">Google News</span>.
+    </footer>
+  </div>
+
+  <script>
+    // --- CONFIG ---
+    const FEEDS = [
+      { name: "MIT Technology Review", url: "https://www.technologyreview.com/topic/artificial-intelligence/feed" }, // [1](https://www.technologyreview.com/topic/artificial-intelligence/feed)
+      { name: "Ars Technica (AI)",     url: "https://arstechnica.com/ai/feed" },                                      // [2](https://rss.feedspot.com/arstechnica_rss_feeds/)
+      { name: "IEEE Spectrum (AI)",    url: "https://spectrum.ieee.org/feeds/topic/artificial-intelligence.rss" },    // [3](https://spectrum.ieee.org/feeds/topic/artificial-intelligence.rss)
+      { name: "The Verge (AI)",        url: "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml" },    // [4](https://www.theverge.com/rss/ai-artificial-intelligence/index.xml)
+      { name: "Google News (AI)",      url: "https://news.google.com/topics/CAAqJAgKIh5DQkFTRUFvSEwyMHZNRzFyZWhJRlpXNHRSMElvQUFQAQ?hl=en-US&gl=US&ceid=US:en" } // [5](https://news.google.com/topics/CAAqJAgKIh5DQkFTRUFvSEwyMHZNRzFyZWhJRlpXNHRSMElvQUFQAQ)
+    ];
+
+    // Show N top items overall:
+    const MAX_ITEMS = 18;
+
+    // rss2json endpoint (demo). Replace with your own endpoint for production.
+    const RSS2JSON = "https://api.rss2json.com/v1/api.json?rss_url=";
+
+    const stamp = document.getElementById('stamp');
+    const grid = document.getElementById('grid');
+
+    const normalize = (item, srcName) => {
+      const title = item.title || "";
+      const link  = item.link || item.guid || "";
+      const desc  = (item.description || "").replace(/<[^>]+>/g, "").trim();
+      const date  = item.pubDate ? new Date(item.pubDate) : (item.published ? new Date(item.published) : new Date());
+      return { title, link, desc, date, source: srcName };
+    };
+
+    const dedupeByLinkOrTitle = (items) => {
+      const seen = new Set();
+      return items.filter(i => {
+        const key = (i.link || i.title).toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    };
+
+    const render = (items) => {
+      grid.innerHTML = "";
+      items.slice(0, MAX_ITEMS).forEach(i => {
+        const card = document.createElement('article');
+        card.className = 'card';
+        card.setAttribute('role','listitem');
+        card.innerHTML = `
+          <a href="${i.link}" target="_blank" rel="noopener noreferrer">${i.title}</a>
+          <div class="desc">${i.desc ? i.desc.slice(0, 200) + (i.desc.length > 200 ? "…" : "") : ""}</div>
+          <div class="source">${i.source} • ${i.date.toLocaleString()}</div>
+        `;
+        grid.appendChild(card);
+      });
+      stamp.textContent = "Updated " + new Date().toLocaleString();
+    };
+
+    (async () => {
+      try {
+        const promises = FEEDS.map(async f => {
+          const res = await fetch(RSS2JSON + encodeURIComponent(f.url));
+          const json = await res.json();
+          const items = (json.items || json.feed?.entries || []).map(it => normalize(it, f.name));
+          return items;
+        });
+
+        const results = await Promise.all(promises);
+        let merged = results.flat();
+
+        // Sort newest first, lightly boost IEEE/MIT/Ars items as "top stories"
+        const tierBoost = (src) => (src.includes("IEEE") || src.includes("MIT") || src.includes("Ars")) ? 1 : 0;
+        merged = merged
+          .sort((a,b) => (b.date - a.date) + (tierBoost(b.source) - tierBoost(a.source)));
+
+        merged = dedupeByLinkOrTitle(merged);
+        render(merged);
+      } catch (e) {
+        stamp.textContent = "Error loading feeds";
+        grid.innerHTML = `<div class="card"><div>We couldn’t fetch the feeds. If this persists, use a server-side proxy (Power Automate/Azure Function) to avoid CORS limits.</div></div>`;
+        console.error(e);
+      }
+    })();
+  </script>
+</body>
+</html>
